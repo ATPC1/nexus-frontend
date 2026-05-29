@@ -17,6 +17,7 @@ const Chat = () => {
   const [isVideoCallActive, setIsVideoCallActive] = useState(false);
   const [replyingTo, setReplyingTo] = useState(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef(null);
 
   // Fetch history
@@ -54,6 +55,7 @@ const Chat = () => {
             if (prev.some(m => m.id === receivedMessage.id)) return prev;
             return [...prev, receivedMessage];
           });
+          setIsSending(false);
         });
 
         // Listen for group clear event
@@ -98,7 +100,8 @@ const Chat = () => {
 
   const sendMessage = (e) => {
     e.preventDefault();
-    if (newMessage.trim() && stompClient && isConnected) {
+    if (newMessage.trim() && stompClient && isConnected && !isSending) {
+      setIsSending(true);
       const messageDto = {
         groupId: parseInt(groupId),
         senderId: user.id,
@@ -111,6 +114,9 @@ const Chat = () => {
       stompClient.send(`/app/chat/${groupId}/sendMessage`, {}, JSON.stringify(messageDto));
       setNewMessage('');
       setReplyingTo(null);
+      
+      // Fallback timeout in case the WebSocket response gets lost or delayed heavily
+      setTimeout(() => setIsSending(false), 5000);
     }
   };
 
@@ -327,15 +333,21 @@ const Chat = () => {
             type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
+            disabled={isSending}
             placeholder="Type a message or @TOM to ask AI..."
-            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder-slate-400"
+            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder-slate-400 disabled:opacity-50"
           />
           <button 
             type="submit" 
-            disabled={!newMessage.trim() || !isConnected}
-            className="px-6 py-3 bg-gradient-to-r from-blue-400 to-blue-500 hover:from-blue-300 hover:to-blue-400 text-white rounded-xl font-bold shadow-lg shadow-blue-400/40 disabled:opacity-50 transition-all"
+            disabled={!newMessage.trim() || !isConnected || isSending}
+            className="px-6 py-3 bg-gradient-to-r from-blue-400 to-blue-500 hover:from-blue-300 hover:to-blue-400 text-white rounded-xl font-bold shadow-lg shadow-blue-400/40 disabled:opacity-50 transition-all flex items-center justify-center min-w-[100px]"
           >
-            Send
+            {isSending ? (
+              <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            ) : 'Send'}
           </button>
         </form>
       </div>
