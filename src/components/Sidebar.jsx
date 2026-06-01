@@ -42,7 +42,7 @@ const Sidebar = () => {
             My Groups
           </NavLink>
           <NavLink 
-            to="/profile" 
+            to="/dashboard/profile" 
             className={({ isActive }) => 
               `block px-4 py-3 rounded-xl transition-all ${isActive ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`
             }
