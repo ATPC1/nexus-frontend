@@ -9,6 +9,9 @@ const VideoCall = ({ onClose, groupId, userId }) => {
   const [isCalling, setIsCalling] = useState(false);
   const [isReceivingCall, setIsReceivingCall] = useState(false);
   const [callerCall, setCallerCall] = useState(null);
+  const [localStream, setLocalStream] = useState(null);
+  const [isAudioMuted, setIsAudioMuted] = useState(false);
+  const [isVideoMuted, setIsVideoMuted] = useState(false);
 
   const currentUserVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -35,6 +38,7 @@ const VideoCall = ({ onClose, groupId, userId }) => {
 
     // Get local video stream immediately
     navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((mediaStream) => {
+      setLocalStream(mediaStream);
       if (currentUserVideoRef.current) {
         currentUserVideoRef.current.srcObject = mediaStream;
         currentUserVideoRef.current.play();
@@ -45,6 +49,26 @@ const VideoCall = ({ onClose, groupId, userId }) => {
       peer.destroy();
     };
   }, [groupId, userId]);
+
+  const toggleAudio = () => {
+    if (localStream) {
+      const audioTrack = localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsAudioMuted(!audioTrack.enabled);
+      }
+    }
+  };
+
+  const toggleVideo = () => {
+    if (localStream) {
+      const videoTrack = localStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        setIsVideoMuted(!videoTrack.enabled);
+      }
+    }
+  };
 
   const call = (remotePeerId) => {
     setIsCalling(true);
@@ -143,8 +167,33 @@ const VideoCall = ({ onClose, groupId, userId }) => {
         </div>
 
         {/* Local Video (Small / PiP) */}
-        <div className="w-full md:w-64 h-48 md:h-auto md:absolute bottom-4 right-4 bg-slate-800 rounded-2xl border-2 border-white/20 overflow-hidden shadow-2xl z-20">
-          <video ref={currentUserVideoRef} className="w-full h-full object-cover transform scale-x-[-1]" muted />
+        <div className="w-full md:w-64 h-48 md:h-auto md:absolute bottom-4 right-4 bg-slate-800 rounded-2xl border-2 border-white/20 overflow-hidden shadow-2xl z-20 flex flex-col">
+          <div className="flex-1 relative">
+            <video ref={currentUserVideoRef} className={`w-full h-full object-cover transform scale-x-[-1] ${isVideoMuted ? 'hidden' : 'block'}`} muted />
+            {isVideoMuted && (
+              <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+                <div className="w-16 h-16 rounded-full bg-slate-700 flex items-center justify-center text-2xl text-slate-400">
+                  📷
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="bg-slate-900/80 backdrop-blur-md p-2 flex justify-center gap-4">
+            <button 
+              onClick={toggleAudio}
+              className={`p-3 rounded-full transition-colors ${isAudioMuted ? 'bg-red-500 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-200'}`}
+              title={isAudioMuted ? 'Unmute Audio' : 'Mute Audio'}
+            >
+              {isAudioMuted ? '🔇' : '🎙️'}
+            </button>
+            <button 
+              onClick={toggleVideo}
+              className={`p-3 rounded-full transition-colors ${isVideoMuted ? 'bg-red-500 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-200'}`}
+              title={isVideoMuted ? 'Enable Video' : 'Disable Video'}
+            >
+              {isVideoMuted ? '🚫' : '📹'}
+            </button>
+          </div>
         </div>
       </div>
     </motion.div>

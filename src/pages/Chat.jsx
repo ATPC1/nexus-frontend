@@ -18,7 +18,15 @@ const Chat = () => {
   const [replyingTo, setReplyingTo] = useState(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  
+  // New States
+  const [typingUsers, setTypingUsers] = useState({});
+  const [isTypingLocal, setIsTypingLocal] = useState(false);
+  const [showMembers, setShowMembers] = useState(false);
+  const [members, setMembers] = useState([]);
+
   const messagesEndRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
 
   // Fetch history
   useEffect(() => {
@@ -32,6 +40,20 @@ const Chat = () => {
     };
     fetchHistory();
   }, [groupId]);
+
+  // Fetch Members
+  useEffect(() => {
+    const fetchMembers = async () => {
+      if (!showMembers) return;
+      try {
+        const response = await api.get(`/groups/${groupId}/members`);
+        setMembers(response.data);
+      } catch (error) {
+        console.error('Failed to fetch members', error);
+      }
+    };
+    fetchMembers();
+  }, [groupId, showMembers]);
 
   // Connect WebSocket
   useEffect(() => {
@@ -68,6 +90,23 @@ const Chat = () => {
           const deletedMessageId = parseInt(message.body);
           setMessages((prev) => prev.filter(m => m.id !== deletedMessageId));
         });
+
+        // Listen for typing events
+        client.subscribe(`/topic/group/${groupId}/typing`, (message) => {
+          const data = JSON.parse(message.body);
+          // Don't show typing indicator for ourselves
+          if (data.userId === user.id) return;
+          
+          setTypingUsers((prev) => {
+            const next = { ...prev };
+            if (data.isTyping) {
+              next[data.userId] = { name: data.name };
+            } else {
+              delete next[data.userId];
+            }
+            return next;
+          });
+        });
       }, (error) => {
         console.error("STOMP Error:", error);
         setIsConnected(false);
@@ -96,7 +135,24 @@ const Chat = () => {
   // Scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, typingUsers]);
+
+  const handleTypingChange = (e) => {
+    setNewMessage(e.target.value);
+    
+    if (stompClient && isConnected) {
+      if (!isTypingLocal) {
+        setIsTypingLocal(true);
+        stompClient.send(`/app/chat/${groupId}/typing`, {}, JSON.stringify({ userId: user.id, name: user.name, isTyping: true }));
+      }
+      
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        setIsTypingLocal(false);
+        stompClient.send(`/app/chat/${groupId}/typing`, {}, JSON.stringify({ userId: user.id, name: user.name, isTyping: false }));
+      }, 2000);
+    }
+  };
 
   const sendMessage = (e) => {
     e.preventDefault();
@@ -128,6 +184,45 @@ const Chat = () => {
           userId={user.id} 
           onClose={() => setIsVideoCallActive(false)} 
         />
+      )}
+
+      {/* Members Modal */}
+      {showMembers && (
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-slate-800 border border-white/10 rounded-2xl p-6 max-w-md w-full shadow-2xl max-h-[80vh] flex flex-col"
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                👥 Group Members
+              </h2>
+              <button onClick={() => setShowMembers(false)} className="text-slate-400 hover:text-white">✕</button>
+            </div>
+            <div className="overflow-y-auto flex-1 space-y-3 pr-2 scrollbar-thin scrollbar-thumb-slate-700">
+              {members.length === 0 ? (
+                <p className="text-slate-400 text-center py-4">Loading members...</p>
+              ) : (
+                members.map(m => (
+                  <div key={m.id} className="flex items-center gap-3 bg-white/5 p-3 rounded-xl border border-white/5">
+                    {m.profilePhoto ? (
+                      <img src={m.profilePhoto} alt={m.name} className="w-10 h-10 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-white font-bold">
+                        {m.name.charAt(0)}
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-white font-medium">{m.name} {m.id === user.id && <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full ml-1">You</span>}</p>
+                      <p className="text-xs text-slate-400">{m.email}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.div>
+        </div>
       )}
 
       {/* Clear Confirmation Modal */}
@@ -189,6 +284,15 @@ const Chat = () => {
           </div>
         </div>
         <div className="flex gap-2">
+          {/* Members Button */}
+          <button 
+            onClick={() => setShowMembers(true)}
+            className="p-2 bg-slate-500/20 text-slate-300 rounded-lg border border-slate-500/30 hover:bg-slate-500/30 transition-colors"
+            title="Group Members"
+          >
+            👥 Members
+          </button>
+          
           {/* Clear Chat Button */}
           <button 
             onClick={() => setShowClearConfirm(true)}
@@ -286,6 +390,27 @@ const Chat = () => {
               </motion.div>
             );
           })}
+          
+          {/* Typing Indicator */}
+          {Object.keys(typingUsers).length > 0 && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center gap-2 max-w-[70%]"
+            >
+              <div className="p-3 rounded-2xl bg-white/5 border border-white/5 rounded-bl-sm backdrop-blur-sm">
+                <p className="text-xs text-slate-400 font-medium mb-1">
+                  {Object.values(typingUsers).map(u => u.name).join(', ')} {Object.keys(typingUsers).length > 1 ? 'are' : 'is'} typing...
+                </p>
+                <div className="flex gap-1 py-1 px-1">
+                  <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                  <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                  <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -332,7 +457,7 @@ const Chat = () => {
           <input
             type="text"
             value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
+            onChange={handleTypingChange}
             disabled={isSending}
             placeholder="Type a message or @TOM to ask AI..."
             className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder-slate-400 disabled:opacity-50"
